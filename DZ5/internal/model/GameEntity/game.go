@@ -10,14 +10,22 @@ type Game struct {
 	pb *chess.PlayBoard
 }
 
+func (g *Game) GetFirstPlayer() *Player {
+	return g.fp
+}
+
+func (g *Game) GetSecondPlayer() *Player {
+	return g.sp
+}
+
+func (g *Game) GetPlayBoard() *chess.PlayBoard {
+	return g.pb
+}
+
 func NewGame(size int, firstPlayer, secondPlayer string) *Game {
 	return &Game{
 		fp: NewPlayer(firstPlayer, chess.FirstTeam),
 		sp: NewPlayer(secondPlayer, chess.SecondTeam),
 		pb: chess.NewPlayBoard(size, size),
 	}
-}
-
-func (g *Game) StartPlay() {
-	g.pb.DrawBoard(g.fp.GetName(), g.sp.GetName())
 }
