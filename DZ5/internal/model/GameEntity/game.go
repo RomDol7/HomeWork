@@ -1,0 +1,31 @@
+package game
+
+import (
+	chess "DZ5/internal/model/BoardAndPieces"
+)
+
+type Game struct {
+	fp *Player
+	sp *Player
+	pb *chess.PlayBoard
+}
+
+func (g *Game) GetFirstPlayer() *Player {
+	return g.fp
+}
+
+func (g *Game) GetSecondPlayer() *Player {
+	return g.sp
+}
+
+func (g *Game) GetPlayBoard() *chess.PlayBoard {
+	return g.pb
+}
+
+func NewGame(size int, firstPlayer, secondPlayer string) *Game {
+	return &Game{
+		fp: NewPlayer(firstPlayer, chess.FirstTeam),
+		sp: NewPlayer(secondPlayer, chess.SecondTeam),
+		pb: chess.NewPlayBoard(size, size),
+	}
+}
