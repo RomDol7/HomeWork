@@ -1,13 +1,32 @@
 package game
 
 import (
-	chess "DZ5/internal/model/BoardAndPieces"
+	chess "DZ5/internal/model/boardAndPieces"
+)
+
+type GameStatus int
+
+const (
+	StatusInProgress GameStatus = iota
+	StatusFinished
 )
 
 type Game struct {
-	fp *Player
-	sp *Player
-	pb *chess.PlayBoard
+	fp          *Player
+	sp          *Player
+	pb          *chess.PlayBoard
+	status      GameStatus
+	currentTurn chess.Team
+}
+
+func NewGame(size int, firstPlayer, secondPlayer string) *Game {
+	return &Game{
+		fp:          NewPlayer(firstPlayer, chess.FirstTeam),
+		sp:          NewPlayer(secondPlayer, chess.SecondTeam),
+		pb:          chess.NewPlayBoard(size, size),
+		currentTurn: chess.FirstTeam,
+		status:      StatusInProgress,
+	}
 }
 
 func (g *Game) GetFirstPlayer() *Player {
@@ -22,10 +41,27 @@ func (g *Game) GetPlayBoard() *chess.PlayBoard {
 	return g.pb
 }
 
-func NewGame(size int, firstPlayer, secondPlayer string) *Game {
-	return &Game{
-		fp: NewPlayer(firstPlayer, chess.FirstTeam),
-		sp: NewPlayer(secondPlayer, chess.SecondTeam),
-		pb: chess.NewPlayBoard(size, size),
+func (g *Game) GetStatus() GameStatus {
+	return g.status
+}
+
+func (g *Game) SetStatus(s GameStatus) {
+	g.status = s
+}
+
+func (g *Game) GetCurrentTurn() chess.Team {
+	return g.currentTurn
+}
+
+func (g *Game) SwitchTurn() {
+	if g.currentTurn == chess.FirstTeam {
+		g.currentTurn = chess.SecondTeam
+	} else {
+		g.currentTurn = chess.FirstTeam
 	}
+}
+
+func (g *Game) SetPiece(row, col int, piece chess.IChessPiece) bool {
+	res := g.pb.SetPiece(row, col, piece)
+	return res
 }
