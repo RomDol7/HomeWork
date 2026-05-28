@@ -47,6 +47,14 @@ func (b *PlayBoard) GetColumnCount() int {
 	return b.columnCount
 }
 
+func (b *PlayBoard) SetPiece(row, col int, piece IChessPiece) bool {
+	if row >= 0 && row < b.rowCount && col >= 0 && col < b.columnCount {
+		b.cells[row][col] = piece
+		return true
+	}
+	return false
+}
+
 // ---------------------------------------------------
 func (b *PlayBoard) initGame() {
 

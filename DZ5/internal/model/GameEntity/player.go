@@ -1,7 +1,7 @@
 package game
 
 import (
-	chess "DZ5/internal/model/BoardAndPieces"
+	chess "DZ5/internal/model/boardAndPieces"
 )
 
 type Player struct {

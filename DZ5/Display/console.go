@@ -1,8 +1,11 @@
 package displayBoard
 
 import (
-	chess "DZ5/internal/model/BoardAndPieces"
+	chess "DZ5/internal/model/boardAndPieces"
 	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
 )
 
 var startFormat string = "\x1b["
@@ -12,8 +15,24 @@ var whiteBackground string = "48;5;246m"
 var blackBackground string = "48;5;234m"
 var letterFormat string = " %c  "
 
-func DrawBoard(b *chess.PlayBoard, p1, p2 string) {
+// ClearScreen очищает экран терминала
+func ClearScreen() {
+	switch runtime.GOOS {
+	case "windows":
+		cmd := exec.Command("cmd", "/c", "cls")
+		cmd.Stdout = os.Stdout
+		cmd.Run()
+	default:
+		fmt.Print("\033[H\033[2J")
+	}
+}
 
+// MoveCursorHome перемещает курсор в начало (для перерисовки)
+func MoveCursorHome() {
+	fmt.Print("\033[H")
+}
+
+func DrawBoard(b *chess.PlayBoard, p1, p2 string) {
 	for j := 0; j < b.GetColumnCount(); j++ {
 		letter := rune('a' + j)
 		fmt.Printf("\x1b[38;5;99;48;5;252m %c  \x1b[0m", letter)
@@ -41,7 +60,6 @@ func DrawBoard(b *chess.PlayBoard, p1, p2 string) {
 				}
 			}
 
-			// Определяем цвет клетки
 			isWhiteCell := (i+j)%2 == 0
 			if isWhiteCell {
 				format += whiteBackground
@@ -49,7 +67,6 @@ func DrawBoard(b *chess.PlayBoard, p1, p2 string) {
 				format += blackBackground
 			}
 			format += letterFormat
-			//format += stopFormat
 
 			if piece == nil {
 				fmt.Printf(format, ' ')
