@@ -17,6 +17,12 @@ type GameRepository struct {
 	gameRecords []model.GameWrapper
 	moveRecords []model.MoveRecord
 	playerStats []model.PlayerStats
+
+	// Счётчики для логгера — последние известные размеры слайсов
+	lastGameRecords  int
+	lastMoveRecords  int
+	lastPlayerStats  int
+	lastKnownSizesMu sync.RWMutex
 }
 
 func NewGameRepository() *GameRepository {
@@ -83,7 +89,7 @@ func (r *GameRepository) Delete(id int) error {
 	return nil
 }
 
-// Принимает интерфейс Storable и распределяет по нужному слайсу
+// Принимает Storable и распределяет по слайсам
 func (r *GameRepository) Distribute(item model.Storable) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -103,7 +109,49 @@ func (r *GameRepository) Distribute(item model.Storable) {
 	}
 }
 
-// Возвращает всю собранную статистику
+// возвращает только новые элементы с момента последней проверки
+// Используется горутиной-логгером.
+func (r *GameRepository) GetDelta() (games []model.GameWrapper, moves []model.MoveRecord, players []model.PlayerStats) {
+	r.mu.RLock()
+	currentGameLen := len(r.gameRecords)
+	currentMoveLen := len(r.moveRecords)
+	currentPlayerLen := len(r.playerStats)
+	r.mu.RUnlock()
+
+	r.lastKnownSizesMu.Lock()
+	defer r.lastKnownSizesMu.Unlock()
+
+	// Игры
+	if currentGameLen > r.lastGameRecords {
+		r.mu.RLock()
+		games = make([]model.GameWrapper, currentGameLen-r.lastGameRecords)
+		copy(games, r.gameRecords[r.lastGameRecords:])
+		r.mu.RUnlock()
+		r.lastGameRecords = currentGameLen
+	}
+
+	// Ходы
+	if currentMoveLen > r.lastMoveRecords {
+		r.mu.RLock()
+		moves = make([]model.MoveRecord, currentMoveLen-r.lastMoveRecords)
+		copy(moves, r.moveRecords[r.lastMoveRecords:])
+		r.mu.RUnlock()
+		r.lastMoveRecords = currentMoveLen
+	}
+
+	// Статистика игроков
+	if currentPlayerLen > r.lastPlayerStats {
+		r.mu.RLock()
+		players = make([]model.PlayerStats, currentPlayerLen-r.lastPlayerStats)
+		copy(players, r.playerStats[r.lastPlayerStats:])
+		r.mu.RUnlock()
+		r.lastPlayerStats = currentPlayerLen
+	}
+
+	return
+}
+
+// полная копия всех слайсов
 func (r *GameRepository) GetStats() ([]model.GameWrapper, []model.MoveRecord, []model.PlayerStats) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -120,7 +168,7 @@ func (r *GameRepository) GetStats() ([]model.GameWrapper, []model.MoveRecord, []
 	return games, moves, players
 }
 
-// Выводит статистику в консоль
+// вывод в консоль
 func (r *GameRepository) PrintStats() {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
