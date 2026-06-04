@@ -1,6 +1,7 @@
 package chess_service
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -22,7 +23,7 @@ func NewGameService(repo *chess_repository.GameRepository) *GameService {
 	return &GameService{repo: repo}
 }
 
-// CreateGame создает новую игру и сохраняет в репозитории
+// Создает новую игру и сохраняет в репозитории
 func (s *GameService) CreateGame(size int, p1Name, p2Name string) (int, *game.Game, error) {
 	if size < chess.MinBoardWidth || size > 20 {
 		return 0, nil, fmt.Errorf("некорректный размер доски: должен быть от %d до 20", chess.MinBoardWidth)
@@ -48,12 +49,12 @@ func (s *GameService) CreateGame(size int, p1Name, p2Name string) (int, *game.Ga
 	return id, g, nil
 }
 
-// GetGame получает игру по ID
+// Получает игру по ID
 func (s *GameService) GetGame(id int) (*game.Game, error) {
 	return s.repo.FindByID(id)
 }
 
-// GetAllGames получает все игры
+// Получает все игры
 func (s *GameService) GetAllGames() []*game.Game {
 	return s.repo.FindAll()
 }
@@ -203,7 +204,7 @@ func (s *GameService) GenerateRandomMove(g *game.Game) *game.PieceMove {
 }
 
 // Выполняет серию случайных ходов с задержкой
-func (s *GameService) AutoPlay(gameID int, movesCount int) {
+func (s *GameService) AutoPlay(ctx context.Context, gameID int, movesCount int) {
 	g, err := s.GetGame(gameID)
 	if err != nil {
 		fmt.Printf("Ошибка: %v\n", err)
@@ -212,6 +213,14 @@ func (s *GameService) AutoPlay(gameID int, movesCount int) {
 
 	moveNum := 0
 	for i := 0; i < movesCount; i++ {
+		// Проверяем контекст
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nАвтоигра прервана по сигналу ОС.")
+			return
+		default:
+		}
+
 		if g.GetStatus() == game.StatusFinished {
 			fmt.Println("Игра завершена!")
 			return
@@ -231,7 +240,6 @@ func (s *GameService) AutoPlay(gameID int, movesCount int) {
 			continue
 		}
 
-		// Очищаем экран и перерисовываем доску
 		displayBoard.ClearScreen()
 		displayBoard.DrawBoard(
 			g.GetPlayBoard(),
@@ -239,13 +247,17 @@ func (s *GameService) AutoPlay(gameID int, movesCount int) {
 			g.GetSecondPlayer().GetName(),
 		)
 
-		// Показываем информацию о ходе
 		currentPlayer := s.GetCurrentPlayerName(g)
 		fmt.Printf("\nАвтоход #%d. Ход сделан. Сейчас ходит: %s\n", moveNum, currentPlayer)
 
-		// Ждём 2-4 секунды
+		// Ждём с проверкой контекста
 		delay := time.Duration(2+rand.Intn(3)) * time.Second
-		time.Sleep(delay)
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nАвтоигра прервана по сигналу ОС.")
+			return
+		case <-time.After(delay):
+		}
 	}
 }
 
