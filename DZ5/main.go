@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	displayBoard "DZ5/display"
@@ -60,6 +63,21 @@ func printHelp() {
 }
 
 func main() {
+	// Создаем контекст, который отменится при получении сигнала ОС
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Перехватываем сигналы завершения
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	// Запускаем обработчик сигналов в отдельной горутине
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\n\nПолучен сигнал %v. Завершаю работу...\n", sig)
+		cancel() // Отменяем контекст
+	}()
+
 	// Инициализируем репозиторий и сервис
 	repo := chess_repository.NewGameRepository()
 	service := chess_service.NewGameService(repo)
@@ -69,6 +87,15 @@ func main() {
 	defer close(loggerStop)
 
 	for {
+		// Проверяем, не нужно ли завершить работу
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nПриложение остановлено по сигналу ОС.")
+			time.Sleep(500 * time.Millisecond) // Даем время на очистку
+			return
+		default:
+		}
+
 		displayBoard.ClearScreen()
 		fmt.Println("╔══════════════════════════════╗")
 		fmt.Println("║         ШАХМАТЫ v2.0        ║")
@@ -83,15 +110,28 @@ func main() {
 		fmt.Println("╚══════════════════════════════╝")
 		fmt.Print("\nВыберите режим (1-3): ")
 
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		// Чтение ввода с проверкой контекста
+		inputChan := make(chan string, 1)
+		go func() {
+			reader := bufio.NewReader(os.Stdin)
+			input, _ := reader.ReadString('\n')
+			inputChan <- strings.TrimSpace(input)
+		}()
+
+		var input string
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nПриложение остановлено по сигналу ОС.")
+			time.Sleep(500 * time.Millisecond)
+			return
+		case input = <-inputChan:
+		}
 
 		switch input {
 		case "1":
-			runSingleGame(service, repo)
+			runSingleGame(ctx, service, repo)
 		case "2":
-			runMultiSimulation(service, repo)
+			runMultiSimulation(ctx, service, repo)
 		case "3":
 			fmt.Println("\nДо свидания!")
 			return
@@ -103,7 +143,14 @@ func main() {
 }
 
 // runSingleGame — режим одной доски с ручным вводом
-func runSingleGame(service *chess_service.GameService, repo *chess_repository.GameRepository) {
+func runSingleGame(ctx context.Context, service *chess_service.GameService, repo *chess_repository.GameRepository) {
+	// Проверяем контекст перед началом
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
 	displayBoard.ClearScreen()
 
 	size, p1, p2, err := GetGameParamsFromConsole()
@@ -126,6 +173,15 @@ func runSingleGame(service *chess_service.GameService, repo *chess_repository.Ga
 	reader := bufio.NewReader(os.Stdin)
 
 	for gameObj.GetStatus() == game.StatusInProgress {
+		// Проверяем контекст в игровом цикле
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nИгра прервана. Возврат в главное меню...")
+			time.Sleep(1 * time.Second)
+			return
+		default:
+		}
+
 		displayBoard.ClearScreen()
 		displayBoard.DrawBoard(gameObj.GetPlayBoard(), p1, p2)
 
@@ -137,8 +193,21 @@ func runSingleGame(service *chess_service.GameService, repo *chess_repository.Ga
 		)
 		fmt.Print("Введите команду (help для справки): ")
 
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		// Чтение ввода с проверкой контекста
+		inputChan := make(chan string, 1)
+		go func() {
+			input, _ := reader.ReadString('\n')
+			inputChan <- strings.TrimSpace(input)
+		}()
+
+		var input string
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nИгра прервана. Возврат в главное меню...")
+			time.Sleep(1 * time.Second)
+			return
+		case input = <-inputChan:
+		}
 
 		switch {
 		case input == "quit":
@@ -169,7 +238,7 @@ func runSingleGame(service *chess_service.GameService, repo *chess_repository.Ga
 				continue
 			}
 			fmt.Printf("Выполняю %d автоходов...\n", n)
-			service.AutoPlay(gameID, n)
+			service.AutoPlay(ctx, gameID, n)
 			continue
 
 		case input == "stats":
@@ -223,7 +292,14 @@ func runSingleGame(service *chess_service.GameService, repo *chess_repository.Ga
 }
 
 // runMultiSimulation — режим симуляции на нескольких досках
-func runMultiSimulation(service *chess_service.GameService, repo *chess_repository.GameRepository) {
+func runMultiSimulation(ctx context.Context, service *chess_service.GameService, repo *chess_repository.GameRepository) {
+	// Проверяем контекст перед началом
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
 	displayBoard.ClearScreen()
 
 	reader := bufio.NewReader(os.Stdin)
@@ -275,8 +351,8 @@ func runMultiSimulation(service *chess_service.GameService, repo *chess_reposito
 	fmt.Println("Для остановки нажмите Enter...")
 	time.Sleep(2 * time.Second)
 
-	// Запускаем симуляцию с рендерингом
-	stopChan := chess_service.RunSimulationWithRenderer(repo, service, gameIDs)
+	// Запускаем симуляцию с рендерингом, передавая контекст
+	stopChan := chess_service.RunSimulationWithRenderer(ctx, repo, service, gameIDs)
 
 	// Ждём нажатия Enter для остановки
 	reader.ReadString('\n')

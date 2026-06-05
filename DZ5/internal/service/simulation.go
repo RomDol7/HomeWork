@@ -1,6 +1,7 @@
 package chess_service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -14,7 +15,7 @@ import (
 // GameState — снимок состояния одной игры для передачи в рендер-горутину
 type GameState struct {
 	GameID         int
-	Game           *game.Game // сама игра (для отрисовки доски)
+	Game           *game.Game
 	FirstPlayer    string
 	SecondPlayer   string
 	CurrentPlayer  string
@@ -34,8 +35,9 @@ type SimulationUpdate struct {
 // 1. Симуляция игр — делает автоходы, отправляет состояние в канал
 // 2. Рендеринг — получает состояние из канала, перерисовывает все доски
 //
-// Возвращает канал для остановки всей симуляции.
+// Принимает контекст для graceful shutdown
 func RunSimulationWithRenderer(
+	ctx context.Context,
 	repo *chess_repository.GameRepository,
 	service *GameService,
 	gameIDs []int,
@@ -44,18 +46,15 @@ func RunSimulationWithRenderer(
 	updateChan := make(chan SimulationUpdate, 10)
 	stopChan := make(chan struct{})
 
-	// Общий счётчик ходов (для MoveNum)
 	var moveCounter int
 	var moveCounterMu sync.Mutex
 
-	// Время, потраченное игроками (накапливаем)
 	var firstPlayerTotal time.Duration
 	var secondPlayerTotal time.Duration
 	var timeMu sync.Mutex
 
 	// --- Горутина 1: Симуляция игр ---
 	go func() {
-		// Отправляем начальное состояние
 		initialState := collectGameStates(repo, gameIDs, firstPlayerTotal, secondPlayerTotal, &moveCounter, &moveCounterMu)
 		updateChan <- SimulationUpdate{
 			Games:   initialState,
@@ -64,6 +63,15 @@ func RunSimulationWithRenderer(
 
 		for {
 			select {
+			case <-ctx.Done():
+				// Graceful shutdown: завершаем симуляцию
+				updateChan <- SimulationUpdate{
+					Games:   collectGameStates(repo, gameIDs, firstPlayerTotal, secondPlayerTotal, &moveCounter, &moveCounterMu),
+					Message: "Симуляция остановлена по сигналу ОС.",
+				}
+				time.Sleep(100 * time.Millisecond)
+				close(updateChan)
+				return
 			case <-stopChan:
 				close(updateChan)
 				return
@@ -82,14 +90,11 @@ func RunSimulationWithRenderer(
 				}
 				allFinished = false
 
-				// Засекаем время старта хода
 				startTime := time.Now()
 				currentTeam := g.GetCurrentTurn()
 
-				// Генерируем и выполняем ход
 				move := service.GenerateRandomMove(g)
 				if move == nil {
-					// Нет ходов — завершаем игру
 					g.SetStatus(game.StatusFinished)
 					repo.Update(id, g)
 					continue
@@ -102,7 +107,6 @@ func RunSimulationWithRenderer(
 
 				err = service.MakeMove(id, *move, moveNum)
 				if err != nil {
-					// Если ход не удался, пробуем ещё раз
 					move = service.GenerateRandomMove(g)
 					if move != nil {
 						moveCounterMu.Lock()
@@ -113,10 +117,9 @@ func RunSimulationWithRenderer(
 					}
 				}
 
-				// Добавляем время
 				elapsed := time.Since(startTime)
 				timeMu.Lock()
-				if currentTeam == 1 { // FirstTeam
+				if currentTeam == 1 {
 					firstPlayerTotal += elapsed
 				} else {
 					secondPlayerTotal += elapsed
@@ -124,7 +127,6 @@ func RunSimulationWithRenderer(
 				timeMu.Unlock()
 			}
 
-			// Собираем и отправляем состояние
 			timeMu.Lock()
 			ft := firstPlayerTotal
 			st := secondPlayerTotal
@@ -139,7 +141,6 @@ func RunSimulationWithRenderer(
 			select {
 			case updateChan <- SimulationUpdate{Games: state, Message: msg}:
 			default:
-				// Рендер не успевает — пропускаем кадр
 			}
 
 			if allFinished {
@@ -148,7 +149,6 @@ func RunSimulationWithRenderer(
 				return
 			}
 
-			// Пауза между ходами
 			time.Sleep(800 * time.Millisecond)
 		}
 	}()
@@ -156,27 +156,26 @@ func RunSimulationWithRenderer(
 	// --- Горутина 2: Рендеринг ---
 	go func() {
 		var lastState SimulationUpdate
-
-		// Тикер для перерисовки раз в секунду
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
+			case <-ctx.Done():
+				// Финальная отрисовка перед выходом
+				displayBoard.ClearScreen()
+				renderAllGames(lastState)
+				return
 			case <-stopChan:
 				return
-
 			case state, ok := <-updateChan:
 				if !ok {
-					// Канал закрыт — финальная отрисовка
 					displayBoard.ClearScreen()
 					renderAllGames(lastState)
 					return
 				}
 				lastState = state
-
 			case <-ticker.C:
-				// Перерисовка по таймеру
 				displayBoard.ClearScreen()
 				renderAllGames(lastState)
 			}
@@ -186,7 +185,6 @@ func RunSimulationWithRenderer(
 	return stopChan
 }
 
-// collectGameStates собирает состояние всех игр
 func collectGameStates(
 	repo *chess_repository.GameRepository,
 	gameIDs []int,
@@ -230,7 +228,6 @@ func collectGameStates(
 	return states
 }
 
-// renderAllGames отрисовывает все доски и статистику
 func renderAllGames(state SimulationUpdate) {
 	if len(state.Games) == 0 {
 		fmt.Println("Нет активных игр. Ожидание...")
@@ -238,7 +235,6 @@ func renderAllGames(state SimulationUpdate) {
 	}
 
 	for i, gs := range state.Games {
-		// Заголовок игры
 		fmt.Printf("\n=== Игра #%d ===  %s vs %s",
 			gs.GameID, gs.FirstPlayer, gs.SecondPlayer)
 		if gs.Status == game.StatusFinished {
@@ -246,10 +242,8 @@ func renderAllGames(state SimulationUpdate) {
 		}
 		fmt.Println()
 
-		// Рисуем реальную доску
 		displayBoard.DrawBoard(gs.Game.GetPlayBoard(), gs.FirstPlayer, gs.SecondPlayer)
 
-		// Информация о ходе
 		statusText := "в процессе"
 		if gs.Status == game.StatusFinished {
 			statusText = "завершена"
@@ -257,12 +251,10 @@ func renderAllGames(state SimulationUpdate) {
 		fmt.Printf("Ход #%d | Сейчас ходит: %s | Статус: %s\n",
 			gs.MoveNumber, gs.CurrentPlayer, statusText)
 
-		// Время игроков
 		fmt.Printf("Время %s: %.1fс | Время %s: %.1fс\n",
 			gs.FirstPlayer, gs.FirstMoveTime.Seconds(),
 			gs.SecondPlayer, gs.SecondMoveTime.Seconds())
 
-		// Разделитель между досками
 		if i < len(state.Games)-1 {
 			fmt.Println(strings.Repeat("═", 60))
 		}
