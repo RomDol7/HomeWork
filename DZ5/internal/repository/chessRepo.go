@@ -38,7 +38,6 @@ func NewGameRepository() *GameRepository {
 		fs:          newFileStorage(),
 	}
 
-	// Загружаем данные из файлов при старте
 	if err := repo.loadFromFiles(); err != nil {
 		fmt.Printf("Предупреждение: ошибка загрузки данных из файлов: %v\n", err)
 	}
@@ -46,24 +45,17 @@ func NewGameRepository() *GameRepository {
 	return repo
 }
 
-// loadFromFiles загружает все слайсы из JSON-файлов
 func (r *GameRepository) loadFromFiles() error {
-	// Загружаем игры
 	if err := r.fs.loadFromFile(r.fs.gamesPath, &r.gameRecords); err != nil {
 		return fmt.Errorf("ошибка загрузки games.json: %w", err)
 	}
-
-	// Загружаем ходы
 	if err := r.fs.loadFromFile(r.fs.movesPath, &r.moveRecords); err != nil {
 		return fmt.Errorf("ошибка загрузки moves.json: %w", err)
 	}
-
-	// Загружаем статистику игроков
 	if err := r.fs.loadFromFile(r.fs.playerPath, &r.playerStats); err != nil {
 		return fmt.Errorf("ошибка загрузки players.json: %w", err)
 	}
 
-	// Синхронизируем счётчики lastKnownSizes с загруженными данными
 	r.lastGameRecords = len(r.gameRecords)
 	r.lastMoveRecords = len(r.moveRecords)
 	r.lastPlayerStats = len(r.playerStats)
@@ -74,11 +66,9 @@ func (r *GameRepository) loadFromFiles() error {
 	return nil
 }
 
-// Distribute — теперь с сохранением в файл
 func (r *GameRepository) Distribute(item model.Storable) {
 	r.mu.Lock()
 
-	// Добавляем в соответствующий слайс
 	switch v := item.(type) {
 	case model.GameWrapper:
 		r.gameRecords = append(r.gameRecords, v)
@@ -94,7 +84,6 @@ func (r *GameRepository) Distribute(item model.Storable) {
 
 	r.mu.Unlock()
 
-	// Сохраняем в файл (без удержания основного мьютекса)
 	switch v := item.(type) {
 	case model.GameWrapper:
 		if err := r.fs.appendToFile(r.fs.gamesPath, v); err != nil {
@@ -117,6 +106,7 @@ func (r *GameRepository) Save(g *game.Game) (int, error) {
 
 	id := r.nextID
 	r.nextID++
+	g.SetID(id)
 	r.games[id] = g
 	return id, nil
 }
@@ -165,8 +155,6 @@ func (r *GameRepository) Delete(id int) error {
 	return nil
 }
 
-// возвращает только новые элементы с момента последней проверки
-// Используется горутиной-логгером.
 func (r *GameRepository) GetDelta() (games []model.GameWrapper, moves []model.MoveRecord, players []model.PlayerStats) {
 	r.mu.RLock()
 	currentGameLen := len(r.gameRecords)
@@ -177,7 +165,6 @@ func (r *GameRepository) GetDelta() (games []model.GameWrapper, moves []model.Mo
 	r.lastKnownSizesMu.Lock()
 	defer r.lastKnownSizesMu.Unlock()
 
-	// Игры
 	if currentGameLen > r.lastGameRecords {
 		r.mu.RLock()
 		games = make([]model.GameWrapper, currentGameLen-r.lastGameRecords)
@@ -186,7 +173,6 @@ func (r *GameRepository) GetDelta() (games []model.GameWrapper, moves []model.Mo
 		r.lastGameRecords = currentGameLen
 	}
 
-	// Ходы
 	if currentMoveLen > r.lastMoveRecords {
 		r.mu.RLock()
 		moves = make([]model.MoveRecord, currentMoveLen-r.lastMoveRecords)
@@ -195,7 +181,6 @@ func (r *GameRepository) GetDelta() (games []model.GameWrapper, moves []model.Mo
 		r.lastMoveRecords = currentMoveLen
 	}
 
-	// Статистика игроков
 	if currentPlayerLen > r.lastPlayerStats {
 		r.mu.RLock()
 		players = make([]model.PlayerStats, currentPlayerLen-r.lastPlayerStats)
@@ -207,7 +192,6 @@ func (r *GameRepository) GetDelta() (games []model.GameWrapper, moves []model.Mo
 	return
 }
 
-// полная копия всех слайсов
 func (r *GameRepository) GetStats() ([]model.GameWrapper, []model.MoveRecord, []model.PlayerStats) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -224,7 +208,6 @@ func (r *GameRepository) GetStats() ([]model.GameWrapper, []model.MoveRecord, []
 	return games, moves, players
 }
 
-// вывод в консоль
 func (r *GameRepository) PrintStats() {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

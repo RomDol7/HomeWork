@@ -1,0 +1,21 @@
+# Бинарники
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+cmd/server/server
+cmd/client/client
+
+# Файлы данных (генерируются при запуске)
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Логи
+*.log

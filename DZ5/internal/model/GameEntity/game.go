@@ -12,6 +12,7 @@ const (
 )
 
 type Game struct {
+	id          int
 	fp          *Player
 	sp          *Player
 	pb          *chess.PlayBoard
@@ -27,6 +28,14 @@ func NewGame(size int, firstPlayer, secondPlayer string) *Game {
 		currentTurn: chess.FirstTeam,
 		status:      StatusInProgress,
 	}
+}
+
+func (g *Game) GetID() int {
+	return g.id
+}
+
+func (g *Game) SetID(id int) {
+	g.id = id
 }
 
 func (g *Game) GetFirstPlayer() *Player {
@@ -62,6 +71,5 @@ func (g *Game) SwitchTurn() {
 }
 
 func (g *Game) SetPiece(row, col int, piece chess.IChessPiece) bool {
-	res := g.pb.SetPiece(row, col, piece)
-	return res
+	return g.pb.SetPiece(row, col, piece)
 }
