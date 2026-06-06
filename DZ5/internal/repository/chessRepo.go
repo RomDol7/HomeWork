@@ -18,6 +18,9 @@ type GameRepository struct {
 	moveRecords []model.MoveRecord
 	playerStats []model.PlayerStats
 
+	// Файловое хранилище
+	fs *fileStorage
+
 	// Счётчики для логгера — последние известные размеры слайсов
 	lastGameRecords  int
 	lastMoveRecords  int
@@ -26,12 +29,85 @@ type GameRepository struct {
 }
 
 func NewGameRepository() *GameRepository {
-	return &GameRepository{
+	repo := &GameRepository{
 		games:       make(map[int]*game.Game),
 		nextID:      1,
 		gameRecords: make([]model.GameWrapper, 0),
 		moveRecords: make([]model.MoveRecord, 0),
 		playerStats: make([]model.PlayerStats, 0),
+		fs:          newFileStorage(),
+	}
+
+	// Загружаем данные из файлов при старте
+	if err := repo.loadFromFiles(); err != nil {
+		fmt.Printf("Предупреждение: ошибка загрузки данных из файлов: %v\n", err)
+	}
+
+	return repo
+}
+
+// loadFromFiles загружает все слайсы из JSON-файлов
+func (r *GameRepository) loadFromFiles() error {
+	// Загружаем игры
+	if err := r.fs.loadFromFile(r.fs.gamesPath, &r.gameRecords); err != nil {
+		return fmt.Errorf("ошибка загрузки games.json: %w", err)
+	}
+
+	// Загружаем ходы
+	if err := r.fs.loadFromFile(r.fs.movesPath, &r.moveRecords); err != nil {
+		return fmt.Errorf("ошибка загрузки moves.json: %w", err)
+	}
+
+	// Загружаем статистику игроков
+	if err := r.fs.loadFromFile(r.fs.playerPath, &r.playerStats); err != nil {
+		return fmt.Errorf("ошибка загрузки players.json: %w", err)
+	}
+
+	// Синхронизируем счётчики lastKnownSizes с загруженными данными
+	r.lastGameRecords = len(r.gameRecords)
+	r.lastMoveRecords = len(r.moveRecords)
+	r.lastPlayerStats = len(r.playerStats)
+
+	fmt.Printf("Загружено из файлов: %d игр, %d ходов, %d записей игроков\n",
+		r.lastGameRecords, r.lastMoveRecords, r.lastPlayerStats)
+
+	return nil
+}
+
+// Distribute — теперь с сохранением в файл
+func (r *GameRepository) Distribute(item model.Storable) {
+	r.mu.Lock()
+
+	// Добавляем в соответствующий слайс
+	switch v := item.(type) {
+	case model.GameWrapper:
+		r.gameRecords = append(r.gameRecords, v)
+	case model.MoveRecord:
+		r.moveRecords = append(r.moveRecords, v)
+	case model.PlayerStats:
+		r.playerStats = append(r.playerStats, v)
+	default:
+		fmt.Printf("Неизвестный тип: %T\n", v)
+		r.mu.Unlock()
+		return
+	}
+
+	r.mu.Unlock()
+
+	// Сохраняем в файл (без удержания основного мьютекса)
+	switch v := item.(type) {
+	case model.GameWrapper:
+		if err := r.fs.appendToFile(r.fs.gamesPath, v); err != nil {
+			fmt.Printf("Ошибка сохранения игры в файл: %v\n", err)
+		}
+	case model.MoveRecord:
+		if err := r.fs.appendToFile(r.fs.movesPath, v); err != nil {
+			fmt.Printf("Ошибка сохранения хода в файл: %v\n", err)
+		}
+	case model.PlayerStats:
+		if err := r.fs.appendToFile(r.fs.playerPath, v); err != nil {
+			fmt.Printf("Ошибка сохранения статистики в файл: %v\n", err)
+		}
 	}
 }
 
@@ -87,26 +163,6 @@ func (r *GameRepository) Delete(id int) error {
 	}
 	delete(r.games, id)
 	return nil
-}
-
-// Принимает Storable и распределяет по слайсам
-func (r *GameRepository) Distribute(item model.Storable) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	switch v := item.(type) {
-	case model.GameWrapper:
-		r.gameRecords = append(r.gameRecords, v)
-
-	case model.MoveRecord:
-		r.moveRecords = append(r.moveRecords, v)
-
-	case model.PlayerStats:
-		r.playerStats = append(r.playerStats, v)
-
-	default:
-		fmt.Printf("Неизвестный тип: %T\n", v)
-	}
 }
 
 // возвращает только новые элементы с момента последней проверки
