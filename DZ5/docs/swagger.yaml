@@ -1,0 +1,277 @@
+basePath: /
+definitions:
+  handlers.AutoPlayRequest:
+    properties:
+      count:
+        example: 5
+        type: integer
+    type: object
+  handlers.CreateGameRequest:
+    properties:
+      first_player:
+        example: Alice
+        type: string
+      second_player:
+        example: Bob
+        type: string
+      size:
+        example: 8
+        type: integer
+    type: object
+  handlers.GameInfo:
+    properties:
+      current_turn:
+        type: string
+      first_player:
+        type: string
+      id:
+        type: integer
+      second_player:
+        type: string
+      size:
+        type: integer
+      status:
+        type: string
+    type: object
+  handlers.GameResponse:
+    properties:
+      board:
+        items:
+          items:
+            type: string
+          type: array
+        type: array
+      current_player:
+        type: string
+      first_player:
+        type: string
+      id:
+        type: integer
+      moves_made:
+        type: integer
+      second_player:
+        type: string
+      size:
+        type: integer
+      status:
+        type: string
+    type: object
+  handlers.MoveRequest:
+    properties:
+      from_x:
+        example: 4
+        type: integer
+      from_y:
+        example: 6
+        type: integer
+      to_x:
+        example: 4
+        type: integer
+      to_y:
+        example: 4
+        type: integer
+    type: object
+  handlers.UpdateGameRequest:
+    properties:
+      action:
+        example: surrender
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: API для управления шахматными играми
+  title: Шахматы API
+  version: "2.0"
+paths:
+  /api/game:
+    post:
+      consumes:
+      - application/json
+      description: Создаёт игру с заданным размером доски и именами игроков
+      parameters:
+      - description: Параметры игры
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CreateGameRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.GameResponse'
+        "400":
+          description: Неверный запрос
+          schema:
+            type: string
+        "500":
+          description: Ошибка сервера
+          schema:
+            type: string
+      summary: Создать новую игру
+      tags:
+      - game
+  /api/game/{id}:
+    delete:
+      description: Удаляет игру по ID из памяти и файла
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: Игра удалена
+        "404":
+          description: Игра не найдена
+          schema:
+            type: string
+      summary: Удалить игру
+      tags:
+      - game
+    get:
+      description: Возвращает полное состояние игры, включая доску
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.GameResponse'
+        "404":
+          description: Игра не найдена
+          schema:
+            type: string
+      summary: Получить игру по ID
+      tags:
+      - game
+    put:
+      consumes:
+      - application/json
+      description: Выполняет действие над игрой (например, сдача)
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Действие
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.UpdateGameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.GameResponse'
+        "400":
+          description: Неверный запрос
+          schema:
+            type: string
+        "404":
+          description: Игра не найдена
+          schema:
+            type: string
+      summary: Обновить игру
+      tags:
+      - game
+  /api/game/{id}/auto:
+    post:
+      consumes:
+      - application/json
+      description: Сервер генерирует и выполняет указанное количество случайных ходов
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Количество ходов
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.AutoPlayRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.GameResponse'
+        "400":
+          description: Неверный запрос
+          schema:
+            type: string
+        "404":
+          description: Игра не найдена
+          schema:
+            type: string
+      summary: Автоматические ходы
+      tags:
+      - game
+  /api/game/{id}/move:
+    post:
+      consumes:
+      - application/json
+      description: Выполняет ход фигуры в указанной игре
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Ход
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.MoveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.GameResponse'
+        "400":
+          description: Ошибка хода
+          schema:
+            type: string
+        "404":
+          description: Игра не найдена
+          schema:
+            type: string
+      summary: Сделать ход
+      tags:
+      - game
+  /api/games:
+    get:
+      description: Возвращает массив всех игр с основной информацией
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.GameInfo'
+            type: array
+      summary: Получить список всех игр
+      tags:
+      - game
+swagger: "2.0"
